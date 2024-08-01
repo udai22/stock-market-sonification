@@ -38,6 +38,9 @@ import asyncio
 import websockets
 import scipy.io.wavfile as wavfile
 
+#Websocket hosts
+
+
 # Setup logging
 logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
@@ -181,6 +184,7 @@ class MarketSonifier:
         except Exception as e:
             logger.error(f"Error in sonify_data: {e}")
             return [(MIN_FREQ, 60)], BEAT_DURATION  # Default note if error occurs
+        
 
     async def run(self):
         """Main execution loop for the market sonification."""
