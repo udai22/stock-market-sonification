@@ -6,19 +6,16 @@ import MarketDataComponent from './components/MarketData/MarketDataComponent';
 import { connectWebSocket, sendWebSocketMessage } from './services/websocketService';
 import { fetchHistoricalData } from './services/dataService';
 
-const SOUNDFONT_PATH = "/Users/udaikhattar/Desktop/Development/AudioSpy/Steinway_D__SC55_Style_.sf2";
-
 function App() {
-  const [marketData, setMarketData] = useState(null);
+  const [marketData, setMarketData] = useState({});
   const [historicalData, setHistoricalData] = useState([]);
   const [isPlaying, setIsPlaying] = useState(false);
   const webSocketRef = useRef(null);
   const audioContextRef = useRef(null);
-  const soundfontRef = useRef(null);
 
   const handleMarketUpdate = useCallback((data) => {
     if (data.type === 'market_update') {
-      setMarketData(data.market_data);
+      setMarketData(prevData => ({...prevData, ...data.delta_data}));
       if (isPlaying) {
         playSonification(data.audio_info);
       }
@@ -38,19 +35,17 @@ function App() {
   }, []);
 
   useEffect(() => {
-    const loadSoundfont = async () => {
-      if (audioContextRef.current) {
-        const response = await fetch(SOUNDFONT_PATH);
-        const arrayBuffer = await response.arrayBuffer();
-        soundfontRef.current = await audioContextRef.current.decodeAudioData(arrayBuffer);
-      }
+    const connectAndListen = () => {
+      const socket = connectWebSocket(handleMarketUpdate);
+      webSocketRef.current = socket;
+
+      socket.onclose = () => {
+        console.log('WebSocket closed. Reconnecting...');
+        setTimeout(connectAndListen, 5000);
+      };
     };
 
-    loadSoundfont();
-
-    const socket = connectWebSocket(handleMarketUpdate);
-    webSocketRef.current = socket;
-
+    connectAndListen();
     fetchHistoricalData().then(setHistoricalData);
 
     return () => {
@@ -61,26 +56,32 @@ function App() {
   }, [handleMarketUpdate]);
 
   const playSonification = useCallback((audioInfo) => {
-    if (!soundfontRef.current || !audioContextRef.current) return;
+    if (!audioContextRef.current) return;
 
     const { notes, duration } = audioInfo;
     const currentTime = audioContextRef.current.currentTime;
 
     notes.forEach(([note, velocity]) => {
-      const source = audioContextRef.current.createBufferSource();
-      source.buffer = soundfontRef.current;
-      
+      const oscillator = audioContextRef.current.createOscillator();
       const gainNode = audioContextRef.current.createGain();
-      gainNode.gain.setValueAtTime(velocity / 127, currentTime);
+
+      oscillator.type = 'sine';
+      oscillator.frequency.setValueAtTime(midiToFrequency(note), currentTime);
       
-      source.connect(gainNode);
+      gainNode.gain.setValueAtTime(velocity / 127, currentTime);
+      gainNode.gain.exponentialRampToValueAtTime(0.00001, currentTime + duration);
+      
+      oscillator.connect(gainNode);
       gainNode.connect(audioContextRef.current.destination);
       
-      source.playbackRate.value = 2 ** ((note - 60) / 12);
-      source.start(currentTime);
-      source.stop(currentTime + duration);
+      oscillator.start(currentTime);
+      oscillator.stop(currentTime + duration);
     });
   }, []);
+
+  const midiToFrequency = (midiNote) => {
+    return 440 * Math.pow(2, (midiNote - 69) / 12);
+  };
 
   const handlePlaybackStart = useCallback(() => {
     setIsPlaying(true);

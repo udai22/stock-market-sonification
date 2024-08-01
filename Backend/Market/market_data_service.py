@@ -269,7 +269,7 @@ def main_ohlcv() -> Generator[dict, None, None]:
     # Store OHLCV values
     ohlcv_values = []
 
-    for symbol, open_price, high_price, low_price, close_price, volume, timestamp in market_data_generator_ohlcv("SPY", "2024-05-22T14:00:00", "2024-05-22T15:00:00", "ohlcv-1s"):
+    for symbol, open_price, high_price, low_price, close_price, volume, timestamp in market_data_generator_ohlcv("SPY", "2024-07-30T14:00:00", "2024-07-30T16:00:00", "ohlcv-1s"):
         ohlcv = OHLCV(open=open_price, high=high_price, low=low_price, close=close_price, volume=volume, time=datetime.fromtimestamp(timestamp / 1e9))
         ohlcv_values.append(ohlcv)
 

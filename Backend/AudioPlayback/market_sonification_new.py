@@ -99,6 +99,8 @@ class MarketSonifier:
     def __init__(self):
         self.audio_player = AudioPlayer()
         self.connected_clients = set()
+        self.last_sent_data = None
+        self.running = True
 
     async def register(self, websocket):
         """Register a new WebSocket client."""
@@ -181,13 +183,25 @@ class MarketSonifier:
                 data = json.loads(message)
                 if data['type'] == 'playback_control':
                     if data['action'] == 'start':
-                        # Start audio playback
-                        pass
+                        self.running = True
                     elif data['action'] == 'stop':
-                        # Stop audio playback
-                        pass
+                        self.running = False
         finally:
             await self.unregister(websocket)
+
+    def calculate_delta(self, new_data):
+        """Calculate the delta between the new data and the last sent data."""
+        if not self.last_sent_data:
+            self.last_sent_data = new_data
+            return new_data
+
+        delta = {}
+        for key, value in new_data.items():
+            if key not in self.last_sent_data or value != self.last_sent_data[key]:
+                delta[key] = value
+
+        self.last_sent_data = new_data
+        return delta if delta else None
 
     async def run(self):
         """Main execution loop for the market sonification."""
@@ -199,48 +213,60 @@ class MarketSonifier:
         start_time = None
         midi_notes = []
 
-        try:
-            logger.info("Starting market data retrieval...")
-            data_generator = main_ohlcv()
-            logger.info("Market data generator initialized.")
+        while True:
+            try:
+                logger.info("Starting market data retrieval...")
+                data_generator = main_ohlcv()
+                logger.info("Market data generator initialized.")
 
-            for data in data_generator:
-                logger.debug(f"Received market data: {data}")
-                if start_time is None:
-                    start_time = datetime.fromtimestamp(data['timestamp'] / 1e9)
+                for data in data_generator:
+                    if not self.running:
+                        await asyncio.sleep(1)
+                        continue
 
-                current_time = datetime.fromtimestamp(data['timestamp'] / 1e9)
-                elapsed_time = current_time - start_time
+                    logger.debug(f"Received market data: {data}")
+                    if start_time is None:
+                        start_time = datetime.fromtimestamp(data['timestamp'] / 1e9)
 
-                # Simulate real-time playback
-                await asyncio.sleep(max(0, elapsed_time.total_seconds() - (datetime.now() - start_time).total_seconds()))
+                    current_time = datetime.fromtimestamp(data['timestamp'] / 1e9)
+                    elapsed_time = current_time - start_time
 
-                notes, duration = self.sonify_data(data, beat_index)
-                logger.debug(f"Sonified data: notes={notes}, duration={duration}")
-                self.audio_player.play(notes, duration)
-                midi_notes.append((notes, duration))
+                    # Simulate real-time playback
+                    await asyncio.sleep(max(0, elapsed_time.total_seconds() - (datetime.now() - start_time).total_seconds()))
 
-                # Prepare audio information for streaming
-                audio_info = {
-                    "notes": [[note, velocity] for note, velocity in notes],
-                    "duration": duration,
-                    "beat_index": beat_index
-                }
+                    delta_data = self.calculate_delta(data)
+                    if delta_data:
+                        notes, duration = self.sonify_data(delta_data, beat_index)
+                        logger.debug(f"Sonified data: notes={notes}, duration={duration}")
+                        self.audio_player.play(notes, duration)
+                        midi_notes.append((notes, duration))
 
-                # Stream data and audio information
-                await self.broadcast({"type": "market_update", "market_data": data, "audio_info": audio_info})
+                        # Prepare audio information for streaming
+                        audio_info = {
+                            "notes": [[note, velocity] for note, velocity in notes],
+                            "duration": duration,
+                            "beat_index": beat_index
+                        }
 
-                beat_index = (beat_index + 1) % len(BEAT_PATTERN)
+                        # Stream data and audio information
+                        await self.broadcast({"type": "market_update", "delta_data": delta_data, "audio_info": audio_info})
 
-                self.log_market_data(data, current_time)
+                    beat_index = (beat_index + 1) % len(BEAT_PATTERN)
 
-        except KeyboardInterrupt:
-            logger.info("Stopping playback...")
-        except Exception as e:
-            logger.error(f"An error occurred in run method: {e}")
-        finally:
-            self.save_midi_and_wav("market_sonification", midi_notes)
-            await server.wait_closed()
+                    self.log_market_data(data, current_time)
+
+                # If we've gone through all data, reset and start over
+                start_time = None
+                await asyncio.sleep(1)
+
+            except asyncio.CancelledError:
+                break
+            except Exception as e:
+                logger.error(f"An error occurred in run method: {e}")
+                await asyncio.sleep(5)  # Wait a bit before retrying
+
+        self.save_midi_and_wav("market_sonification", midi_notes)
+        await server.wait_closed()
 
     @staticmethod
     def log_market_data(data: dict, timestamp: datetime):

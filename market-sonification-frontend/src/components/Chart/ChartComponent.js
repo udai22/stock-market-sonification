@@ -63,13 +63,27 @@ const ChartComponent = ({ data, latestData }) => {
 
   useEffect(() => {
     if (candleSeries && data.length > 0) {
-      candleSeries.setData(data);
+      const formattedData = data.map(item => ({
+        time: item.time,
+        open: item.open,
+        high: item.high,
+        low: item.low,
+        close: item.close
+      }));
+      candleSeries.setData(formattedData);
     }
   }, [candleSeries, data]);
 
   useEffect(() => {
-    if (candleSeries && latestData) {
-      candleSeries.update(latestData);
+    if (candleSeries && latestData && latestData.timestamp) {
+      const updatedData = {
+        time: latestData.timestamp / 1000, // Convert to seconds
+        open: latestData.open,
+        high: latestData.high,
+        low: latestData.low,
+        close: latestData.close
+      };
+      candleSeries.update(updatedData);
     }
   }, [candleSeries, latestData]);
 

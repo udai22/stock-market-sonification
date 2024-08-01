@@ -11,7 +11,7 @@ export const fetchHistoricalData = async () => {
   try {
     const response = await axios.get(`${API_BASE_URL}/main_ohlcv`);
     return response.data.map(item => ({
-      time: new Date(item.timestamp / 1e6).getTime() / 1000, // Convert nanoseconds to seconds
+      time: item.timestamp / 1000, // Convert nanoseconds to seconds
       open: item.open,
       high: item.high,
       low: item.low,
